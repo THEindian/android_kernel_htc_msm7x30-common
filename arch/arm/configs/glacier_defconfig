@@ -1,6 +1,6 @@
 #
 # Automatically generated make config: don't edit
-# Linux/arm 3.0.40 Kernel Configuration
+# Linux/arm 3.0.42 Kernel Configuration
 #
 CONFIG_ARM=y
 CONFIG_SYS_SUPPORTS_APM_EMULATION=y
@@ -409,6 +409,7 @@ CONFIG_JESUS_PHONE=y
 CONFIG_AMSS_7X25_VERSION_2009=y
 # CONFIG_AMSS_7X25_VERSION_2008 is not set
 CONFIG_MSM7KV2_AUDIO=y
+# CONFIG_MSM7KV2_1X_AUDIO is not set
 CONFIG_MSM_ADSP_REPORT_EVENTS=y
 CONFIG_RTAC=y
 # CONFIG_MSM_VREG_SWITCH_INVERTED is not set
