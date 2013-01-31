@@ -463,7 +463,6 @@ obj-$(CONFIG_MACH_GLACIER) += board-glacier.o
 obj-$(CONFIG_MACH_GLACIER) += board-glacier-microp.o board-glacier-rfkill.o
 obj-$(CONFIG_MACH_GLACIER) += board-glacier-keypad.o board-glacier-audio.o
 obj-$(CONFIG_MACH_GLACIER) += board-glacier-mmc.o board-glacier-wifi.o
-obj-$(CONFIG_MACH_GLACIER) += htc_fmtx_rfkill.o
 obj-$(CONFIG_MACH_GLACIER) += htc_bdaddress.o
 obj-$(CONFIG_MACH_VISION) += board-vision.o
 obj-$(CONFIG_MACH_VISION) += board-vision-microp.o board-vision-rfkill.o

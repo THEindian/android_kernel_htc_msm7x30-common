@@ -480,6 +480,13 @@ config MACH_BLISS
        help
          Support for the Qualcomm Bliss board.
 
+config MACH_GLACIER
+       depends on ARCH_MSM7X30
+       default n
+       bool "Glacier"
+       help
+         Support for the Qualcomm Glacier board.
+
 config MACH_VISION
        depends on ARCH_MSM7X30
        default n
