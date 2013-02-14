@@ -62,6 +62,11 @@ static void msmfb_resume(struct msmfb_info *msmfb);
 #define BLIT_TIME 0x4
 #define SHOW_UPDATES 0x8
 
+#ifdef CONFIG_PANEL_SELF_REFRESH
+extern struct panel_icm_info *panel_icm;
+extern wait_queue_head_t panel_update_wait_queue;
+#endif
+
 #define DLOG(mask, fmt, args...) \
 do { \
 	if ((msmfb_debug_mask | SUSPEND_RESUME) & mask) \
@@ -84,8 +89,10 @@ char *get_fb_addr(void)
 {
 	int i;
 
-	if (!usb_pjt_info.latest_offset)
+	if (!usb_pjt_info.latest_offset) {
+		printk(KERN_WARNING "%s: wrong address sent via ioctl?\n", __func__);
 		return 0;
+	}
 
 	usb_pjt_info.usb_offset = usb_pjt_info.latest_offset;
 
@@ -783,7 +790,7 @@ static int msmfb_overlay_set(struct fb_info *info, void __user *p)
 	if (first_overlay_set > 0)
 		first_overlay_set--;
 
-	PR_DISP_INFO("%s(%d) dst rect info w=%d h=%d x=%d y=%d rotator=%d\n", __func__, __LINE__, req.dst_rect.w, req.dst_rect.h, req.dst_rect.x, req.dst_rect.y, req.user_data[0]);
+	//PR_DISP_INFO("%s(%d) dst rect info w=%d h=%d x=%d y=%d rotator=%d\n", __func__, __LINE__, req.dst_rect.w, req.dst_rect.h, req.dst_rect.x, req.dst_rect.y, req.user_data[0]);
 
 	sem_owned = overlay_semaphore_lock();
 	/* Used the following mutex to make sure that overlay play/set will not do at the same time */
@@ -836,7 +843,6 @@ static int msmfb_overlay_play(struct fb_info *info, unsigned long *argp)
 	int	ret;
 	struct msmfb_overlay_data req;
 	struct file *p_src_file = 0;
-	struct msmfb_info *msmfb = info->par;
 
 	ret = copy_from_user(&req, argp, sizeof(req));
 	if (ret) {
@@ -848,12 +854,6 @@ static int msmfb_overlay_play(struct fb_info *info, unsigned long *argp)
 	/* Used the following mutex to make sure that overlay play/set will not do at the same time */
 	mutex_lock(&overlay_ioctl_mutex);
 	ret = mdp->overlay_play(mdp, info, &req, &p_src_file);
-
-	if (ret == 0 && (mdp->overrides & MSM_MDP_FORCE_UPDATE)
-		&& msmfb->sleeping == AWAKE) {
-		msmfb_pan_update(info, 0, 0, info->var.xres, info->var.yres, info->var.yoffset, 1);
-	}
-
 	mutex_unlock(&overlay_ioctl_mutex);
 
 	if (p_src_file)
@@ -1056,7 +1056,8 @@ static int msmfb_ioctl(struct fb_info *p, unsigned int cmd, unsigned long arg)
 			ret = -EINVAL;
 		} else
 			ret = msmfb_overlay_set(p, argp);
-		PR_DISP_INFO("MSMFB_OVERLAY_SET ret=%d\n", ret);
+		if (ret < 0)
+			PR_DISP_INFO("MSMFB_OVERLAY_SET ret=%d\n", ret);
 		break;
 	case MSMFB_OVERLAY_UNSET:
 		ret = msmfb_overlay_unset(p, argp);
@@ -1219,7 +1220,7 @@ static void setup_fb_info(struct msmfb_info *msmfb)
 	int r;
 
 	/* finish setting up the fb_info struct */
-	strncpy(fb_info->fix.id, "msmfb", 16);
+	strncpy(fb_info->fix.id, "msmfb40_0", 16);
 	fb_info->fix.ypanstep = 1;
 
 	fb_info->fbops = &msmfb_ops;
@@ -1237,6 +1238,7 @@ static void setup_fb_info(struct msmfb_info *msmfb)
 	fb_info->var.yres_virtual = msmfb->yres * 2;
 	fb_info->var.bits_per_pixel = BITS_PER_PIXEL_DEF;
 	fb_info->var.accel_flags = 0;
+	fb_info->var.reserved[3] = 60;
 
 	fb_info->var.yoffset = 0;
 
@@ -1299,8 +1301,7 @@ static int setup_fbmem(struct msmfb_info *msmfb, struct platform_device *pdev)
 
 	fbram_size = pdev->resource[0].end - pdev->resource[0].start + 1;
 	fbram_phys = (char *)pdev->resource[0].start;
-	fbram = __va(fbram_phys);
-
+	fbram = ioremap((unsigned long)fbram_phys, fbram_size);
 	if (!fbram) {
 		printk(KERN_ERR "fbram ioremap failed!\n");
 		return -ENOMEM;
@@ -1319,6 +1320,10 @@ static int setup_fbmem(struct msmfb_info *msmfb, struct platform_device *pdev)
 	fb->fix.smem_len = fbram_size;
 	fb->screen_base = fbram;
 	fb->fix.smem_start = (unsigned long)fbram_phys;
+
+	/* Clear frame buffer*/
+	memset( fbram, 0x0, fbram_size );
+	PR_DISP_INFO( "setup_fbmem: fbram %p fbram_size %d\n", fbram, fbram_size);
 
 	return 0;
 }
@@ -1380,18 +1385,6 @@ static int msmfb_probe(struct platform_device *pdev)
 		msmfb->earlier_suspend.level = EARLY_SUSPEND_LEVEL_BLANK_SCREEN;
 		register_early_suspend(&msmfb->earlier_suspend);
 	}
-#ifdef CONFIG_HTC_ONMODE_CHARGING
-	if (!(msmfb->overrides & MSM_FB_PM_DISABLE)) {
-		msmfb->onchg_suspend.suspend = msmfb_onchg_suspend;
-		msmfb->onchg_suspend.resume = msmfb_onchg_resume_handler;
-		msmfb->onchg_suspend.level = EARLY_SUSPEND_LEVEL_DISABLE_FB;
-		register_onchg_suspend(&msmfb->onchg_suspend);
-
-		msmfb->onchg_earlier_suspend.suspend = msmfb_onchg_earlier_suspend;
-		msmfb->onchg_earlier_suspend.level = EARLY_SUSPEND_LEVEL_BLANK_SCREEN;
-		register_onchg_suspend(&msmfb->onchg_earlier_suspend);
-	}
-#endif
 #endif
 
 #ifdef CONFIG_FB_MSM_OVERLAY
@@ -1492,8 +1485,12 @@ int get_fb_phys_info(unsigned long *start, unsigned long *len, int fb_num,
 	struct fb_info *fi;
 	PR_DISP_DEBUG("%s fb_num %d\n", __func__, fb_num);
 
-	if (fb_num >= FB_MAX)
+	if (fb_num >= FB_MAX ||
+		(subsys_id != DISPLAY_SUBSYSTEM_ID &&
+		 subsys_id != ROTATOR_SUBSYSTEM_ID)) {
+		pr_err("%s(): Invalid parameters\n", __func__);
 		return -1;
+	}
 
 	fi = registered_fb[fb_num];
 

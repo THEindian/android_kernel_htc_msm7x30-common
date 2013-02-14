@@ -64,12 +64,10 @@
 #include <linux/android_pmem.h>
 #include <linux/input/msm_ts.h>
 #include <mach/rpc_pmapp.h>
-#ifdef CONFIG_MSM7KV2_AUDIO
 #include <mach/qdsp5v2_2x/msm_lpa.h>
 #include <mach/qdsp5v2_2x/aux_pcm.h>
 #include <mach/qdsp5v2_2x/mi2s.h>
 #include <mach/qdsp5v2_2x/audio_dev_ctl.h>
-#endif
 #include <mach/htc_battery.h>
 #include <linux/tps65200.h>
 #include <mach/rpc_server_handset.h>
@@ -79,7 +77,6 @@
 #include <asm/mach/flash.h>
 #include <mach/vreg.h>
 #include <linux/platform_data/qcom_crypto_device.h>
-//#include <mach/htc_fmtx_rfkill.h>
 #include <mach/htc_headset_mgr.h>
 #include <mach/htc_headset_gpio.h>
 #include <mach/htc_headset_pmic.h>
@@ -103,8 +100,6 @@
 #ifdef CONFIG_SERIAL_MSM_HS_PURE_ANDROID
 #include <mach/bcm_bt_lpm.h>
 #endif
-#include <mach/qdsp5v2_2x/mi2s.h>
-#include <mach/qdsp5v2_2x/audio_dev_ctl.h>
 #include <mach/sdio_al.h>
 #include "smd_private.h"
 #include "board-glacier.h"
@@ -145,6 +140,8 @@ struct pm8xxx_gpio_init_info {
 	unsigned			gpio;
 	struct pm_gpio			config;
 };
+
+int __init glacier_init_panel(void);
 
 static unsigned int engineerid;
 extern unsigned long msm_fb_base;
@@ -355,7 +352,7 @@ static struct platform_device capella_cm3602 = {
 
 /* HTC_HEADSET_GPIO Driver */
 static struct htc_headset_gpio_platform_data htc_headset_gpio_data = {
-	.hpin_gpio		= 0,
+	.hpin_gpio		= PM8058_GPIO_PM_TO_SYS(GLACIER_AUD_HP_DETz),
 	.key_enable_gpio	= 0,
 	.mic_select_gpio	= GLACIER_AUD_MICPATH_SEL,
 };
@@ -387,8 +384,9 @@ static struct platform_device htc_headset_microp = {
 
 /* HTC_HEADSET_PMIC Driver */
 static struct htc_headset_pmic_platform_data htc_headset_pmic_data = {
-	.hpin_gpio	= PM8058_GPIO_PM_TO_SYS(GLACIER_AUD_HP_DETz),
-	.hpin_irq	= MSM_GPIO_TO_INT(PM8058_GPIO_PM_TO_SYS(GLACIER_AUD_HP_DETz)),
+	.hpin_gpio	= 0,
+	.hpin_irq	= MSM_GPIO_TO_INT(
+			  PM8058_GPIO_PM_TO_SYS(GLACIER_AUD_HP_DETz)),
 };
 
 static struct platform_device htc_headset_pmic = {
@@ -426,24 +424,6 @@ static struct microp_function_config microp_functions[] = {
 	},
 };
 
-static struct microp_led_config up_led_config[] = {
-	{
-		.name = "amber",
-		.type = LED_RGB,
-	},
-	{
-		.name = "green",
-		.type = LED_RGB,
-	},
-	{
-		.name = "button-backlight",
-		.type = LED_PWM,
-		.led_pin = 1 << 0,
-		.init_value = 0,
-		.fade_time = 5,
-	},
-};
-
 static struct microp_function_config microp_lightsensor_function = {
 	.name = "light_sensor",
 	.category = MICROP_FUNCTION_LSENSOR,
@@ -459,9 +439,27 @@ static struct lightsensor_platform_data lightsensor_data = {
 	.irq = MSM_uP_TO_INT(9),
 };
 
+static struct microp_led_config led_config[] = {
+	{
+		.name = "amber",
+		.type = LED_RGB,
+	},
+	{
+		.name = "green",
+		.type = LED_RGB,
+	},
+	{
+		.name = "button-backlight",
+		.type = LED_PWM,
+		.led_pin = 1 << 2,
+		.init_value = 0xFF,
+		.fade_time = 5,
+	},
+};
+
 static struct microp_led_platform_data microp_leds_data = {
-	.num_leds	= ARRAY_SIZE(up_led_config),
-	.led_config	= up_led_config,
+	.num_leds = ARRAY_SIZE(led_config),
+	.led_config = led_config,
 };
 
 static struct bma150_platform_data microp_g_sensor_pdata = {
@@ -633,7 +631,7 @@ static int pm8058_gpios_init(void)
 		.function       = PM_GPIO_FUNC_NORMAL,
 		.inv_int_pol    = 0,
 	};
-
+#if 0
 	static struct pm_gpio tp_rstz = {
 		.direction      = PM_GPIO_DIR_OUT,
 		.output_buffer  = PM_GPIO_OUT_BUF_CMOS,
@@ -644,7 +642,7 @@ static int pm8058_gpios_init(void)
 		.function       = PM_GPIO_FUNC_NORMAL,
 		.inv_int_pol    = 0,
 	};
-
+#endif
 	static struct pm_gpio home_key = {
 		.direction      = PM_GPIO_DIR_IN,
 		.output_buffer  = 0,
@@ -737,7 +735,7 @@ static int pm8058_gpios_init(void)
 		.direction      = PM_GPIO_DIR_IN,
 		.output_buffer  = 0,
 		.output_value   = 0,
-		.pull           = PM_GPIO_PULL_NO,
+		.pull           = PM_GPIO_PULL_UP_31P5,
 		.vin_sel        = PM8058_GPIO_VIN_S3,
 		.out_strength   = 0,
 		.function       = PM_GPIO_FUNC_NORMAL,
@@ -773,14 +771,14 @@ static int pm8058_gpios_init(void)
 		return rc;
 	} else
 	  printk(KERN_ERR "%s OJ_ACTION config ok\n", __func__);
-
+#if 0
 	rc = pm8xxx_gpio_config(PM8058_GPIO_PM_TO_SYS(GLACIER_TP_RSTz), &tp_rstz);
 	if (rc) {
 		printk(KERN_ERR "%s TP_RSTz config failed\n", __func__);
 		return rc;
 	} else
 	  printk(KERN_ERR "%s TP_RSTz config ok\n", __func__);
-
+#endif
 	rc = pm8xxx_gpio_config(PM8058_GPIO_PM_TO_SYS(GLACIER_VOL_UP), &vol_up);
 	if (rc) {
 		printk(KERN_ERR "%s VOL_UP config failed\n", __func__);
@@ -1023,20 +1021,12 @@ enum version{
 	VER_UNSUPPORTED = 0xFF
 };
 
-
-static struct vreg *vreg_marimba_1;
 static struct vreg *vreg_marimba_2;
 
 static unsigned int msm_marimba_setup_power(void)
 {
 	int rc;
 
-	rc = vreg_enable(vreg_marimba_1);
-	if (rc) {
-		printk(KERN_ERR "%s: vreg_enable() = %d \n",
-					__func__, rc);
-		goto out;
-	}
 	rc = vreg_enable(vreg_marimba_2);
 	if (rc) {
 		printk(KERN_ERR "%s: vreg_enable() = %d \n",
@@ -1052,11 +1042,6 @@ static void msm_marimba_shutdown_power(void)
 {
 	int rc;
 
-	rc = vreg_disable(vreg_marimba_1);
-	if (rc) {
-		printk(KERN_ERR "%s: return val: %d\n",
-					__func__, rc);
-	}
 	rc = vreg_disable(vreg_marimba_2);
 	if (rc) {
 		printk(KERN_ERR "%s: return val: %d \n",
@@ -1064,154 +1049,109 @@ static void msm_marimba_shutdown_power(void)
 	}
 };
 
+struct vreg *fm_regulator;
+static int fm_radio_setup(struct marimba_fm_platform_data *pdata)
+{
+	int rc;
+	uint32_t irqcfg;
+	const char *id = "FMPW";
+
+	pdata->vreg_s2 = vreg_get(NULL, "s2");
+	if (IS_ERR(pdata->vreg_s2)) {
+		printk(KERN_ERR "%s: vreg get failed (%ld)\n",
+			__func__, PTR_ERR(pdata->vreg_s2));
+		return -1;
+	}
+
+	rc = pmapp_vreg_level_vote(id, PMAPP_VREG_S2, 1300);
+	if (rc < 0) {
+		printk(KERN_ERR "%s: voltage level vote failed (%d)\n",
+			__func__, rc);
+		return rc;
+	}
+
+	rc = vreg_enable(pdata->vreg_s2);
+	if (rc) {
+		printk(KERN_ERR "%s: vreg_enable() = %d \n",
+					__func__, rc);
+		return rc;
+	}
+
+	rc = pmapp_clock_vote(id, PMAPP_CLOCK_ID_DO,
+					  PMAPP_CLOCK_VOTE_ON);
+	if (rc < 0) {
+		printk(KERN_ERR "%s: clock vote failed (%d)\n",
+			__func__, rc);
+		goto fm_clock_vote_fail;
+	}
+	irqcfg = PCOM_GPIO_CFG(147, 0, GPIO_INPUT, GPIO_NO_PULL,
+					GPIO_CFG_2MA);
+	rc = gpio_tlmm_config(irqcfg, GPIO_CFG_ENABLE);
+	if (rc) {
+		printk(KERN_ERR "%s: gpio_tlmm_config(%#x)=%d\n",
+				__func__, irqcfg, rc);
+		rc = -EIO;
+		goto fm_gpio_config_fail;
+
+	}
+	return 0;
+fm_gpio_config_fail:
+	pmapp_clock_vote(id, PMAPP_CLOCK_ID_DO,
+				  PMAPP_CLOCK_VOTE_OFF);
+fm_clock_vote_fail:
+	vreg_disable(pdata->vreg_s2);
+	return rc;
+
+};
+
+static void fm_radio_shutdown(struct marimba_fm_platform_data *pdata)
+{
+	int rc;
+	const char *id = "FMPW";
+	uint32_t irqcfg = PCOM_GPIO_CFG(147, 0, GPIO_INPUT, GPIO_PULL_UP,
+					GPIO_CFG_2MA);
+	rc = gpio_tlmm_config(irqcfg, GPIO_CFG_ENABLE);
+	if (rc) {
+		printk(KERN_ERR "%s: gpio_tlmm_config(%#x)=%d\n",
+				__func__, irqcfg, rc);
+	}
+	rc = vreg_disable(pdata->vreg_s2);
+	if (rc) {
+		printk(KERN_ERR "%s: return val: %d \n",
+					__func__, rc);
+	}
+	rc = pmapp_clock_vote(id, PMAPP_CLOCK_ID_DO,
+					  PMAPP_CLOCK_VOTE_OFF);
+	if (rc < 0)
+		printk(KERN_ERR "%s: clock_vote return val: %d \n",
+						__func__, rc);
+	rc = pmapp_vreg_level_vote(id, PMAPP_VREG_S2, 0);
+	if (rc < 0)
+		printk(KERN_ERR "%s: vreg level vote return val: %d \n",
+						__func__, rc);
+}
+
+static struct marimba_fm_platform_data marimba_fm_pdata = {
+	.fm_setup =  fm_radio_setup,
+	.fm_shutdown = fm_radio_shutdown,
+	.irq = MSM_GPIO_TO_INT(147),
+	.vreg_s2 = NULL,
+	.vreg_xo_out = NULL,
+	.is_fm_soc_i2s_master = false,
+	.config_i2s_gpio = NULL,
+};
+
+
 /* Slave id address for FM/CDC/QMEMBIST
  * Values can be programmed using Marimba slave id 0
  * should there be a conflict with other I2C devices
  * */
-//#define MARIMBA_SLAVE_ID_FM_ADDR	0x2A
+#define MARIMBA_SLAVE_ID_FM_ADDR	0x2A
 #define MARIMBA_SLAVE_ID_CDC_ADDR	0x77
 #define MARIMBA_SLAVE_ID_QMEMBIST_ADDR	0X66
 
-static const char *tsadc_id = "MADC";
-static const char *vregs_tsadc_name[] = {
-	"gp12",
-	"s2",
-};
-static struct vreg *vregs_tsadc[ARRAY_SIZE(vregs_tsadc_name)];
-
-static int marimba_tsadc_power(int vreg_on)
-{
-	int i, rc = 0;
-
-        for (i = 0; i < ARRAY_SIZE(vregs_tsadc_name); i++) {
-          if (!vregs_tsadc[i]) {
-            pr_err("%s: vreg_get %s failed (%d)\n",
-                   __func__, vregs_tsadc_name[i], rc);
-            goto vreg_fail;
-          }
-          
-          rc = vreg_on ? vreg_enable(vregs_tsadc[i]) :
-            vreg_disable(vregs_tsadc[i]);
-          if (rc < 0) {
-            pr_err("%s: vreg %s %s failed (%d)\n",
-                   __func__, vregs_tsadc_name[i],
-                   vreg_on ? "enable" : "disable", rc);
-            goto vreg_fail;
-          }
-        }
-        /* If marimba vote for DO buffer */
-        rc = pmapp_clock_vote(tsadc_id, PMAPP_CLOCK_ID_DO,
-                              vreg_on ? PMAPP_CLOCK_VOTE_ON : PMAPP_CLOCK_VOTE_OFF);
-        if (rc)	{
-          pr_err("%s: unable to %svote for d0 clk\n",
-                 __func__, vreg_on ? "" : "de-");
-          goto do_vote_fail;
-        }
-        msleep(5); /* ensure power is stable */
-        
-        return 0;
-        
-do_vote_fail:
-vreg_fail:
-	while (i) {
-          if (vreg_on) {
-            vreg_disable(vregs_tsadc[--i]);
-          } else {
-            vreg_enable(vregs_tsadc[--i]);
-          }
-	}
-
-	return rc;
-}
-
-static int marimba_tsadc_vote(int vote_on)
-{
-	int rc = 0;
-
-        int level = vote_on ? 1300 : 0;
-        rc = pmapp_vreg_level_vote(tsadc_id, PMAPP_VREG_S2, level);
-        if (rc < 0)
-          pr_err("%s: vreg level %s failed (%d)\n",
-                 __func__, vote_on ? "on" : "off", rc);
-        
-        return rc;
-}
-
-static int marimba_tsadc_init(void)
-{
-	int i, rc = 0;
-
-        for (i = 0; i < ARRAY_SIZE(vregs_tsadc_name); i++) {
-          vregs_tsadc[i] = vreg_get(NULL, vregs_tsadc_name[i]);
-          if (IS_ERR(vregs_tsadc[i])) {
-            pr_err("%s: vreg get %s failed (%ld)\n",
-                   __func__, vregs_tsadc_name[i],
-                   PTR_ERR(vregs_tsadc[i]));
-            rc = PTR_ERR(vregs_tsadc[i]);
-            goto vreg_get_fail;
-          }
-        }
-
-	return 0;
-
-vreg_get_fail:
-	while (i) {
-          vreg_put(vregs_tsadc[--i]);
-	}
-	return rc;
-}
-
-static int marimba_tsadc_exit(void)
-{
-	int i, rc = 0;
-
-        for (i = 0; i < ARRAY_SIZE(vregs_tsadc_name); i++) {
-          if (vregs_tsadc[i])
-            vreg_put(vregs_tsadc[i]);
-        }
-        rc = pmapp_vreg_level_vote(tsadc_id, PMAPP_VREG_S2, 0);
-        if (rc < 0)
-          pr_err("%s: vreg level off failed (%d)\n",
-                 __func__, rc);
-
-	return rc;
-}
-
-
-static struct msm_ts_platform_data msm_ts_data = {
-	.min_x          = 0,
-	.max_x          = 4096,
-	.min_y          = 0,
-	.max_y          = 4096,
-	.min_press      = 0,
-	.max_press      = 255,
-	.inv_x          = 4096,
-	.inv_y          = 4096,
-	.can_wakeup	= false,
-};
-
-static struct marimba_tsadc_platform_data marimba_tsadc_pdata = {
-	.marimba_tsadc_power =  marimba_tsadc_power,
-	.init		     =  marimba_tsadc_init,
-	.exit		     =  marimba_tsadc_exit,
-	.level_vote	     =  marimba_tsadc_vote,
-	.tsadc_prechg_en = true,
-	.can_wakeup	= false,
-	.setup = {
-		.pen_irq_en	=	true,
-		.tsadc_en	=	true,
-	},
-	.params2 = {
-		.input_clk_khz		=	2400,
-		.sample_prd		=	TSADC_CLK_3,
-	},
-	.params3 = {
-		.prechg_time_nsecs	=	6400,
-		.stable_time_nsecs	=	6400,
-		.tsadc_test_mode	=	0,
-	},
-	.tssc_data = &msm_ts_data,
-};
+#define BAHAMA_SLAVE_ID_FM_ADDR         0x2A
+#define BAHAMA_SLAVE_ID_QMEMBIST_ADDR   0x7B
 
 static struct vreg *vreg_codec_s4;
 static int msm_marimba_codec_power(int vreg_on)
@@ -1253,26 +1193,20 @@ static struct marimba_codec_platform_data mariba_codec_pdata = {
 };
 
 static struct marimba_platform_data marimba_pdata = {
-  //.slave_id[MARIMBA_SLAVE_ID_FM]       = MARIMBA_SLAVE_ID_FM_ADDR,
+	.slave_id[MARIMBA_SLAVE_ID_FM]       = MARIMBA_SLAVE_ID_FM_ADDR,
 	.slave_id[MARIMBA_SLAVE_ID_CDC]	     = MARIMBA_SLAVE_ID_CDC_ADDR,
 	.slave_id[MARIMBA_SLAVE_ID_QMEMBIST] = MARIMBA_SLAVE_ID_QMEMBIST_ADDR,
+	.slave_id[SLAVE_ID_BAHAMA_FM]        = BAHAMA_SLAVE_ID_FM_ADDR,
+	.slave_id[SLAVE_ID_BAHAMA_QMEMBIST]  = BAHAMA_SLAVE_ID_QMEMBIST_ADDR,
 	.marimba_setup = msm_marimba_setup_power,
 	.marimba_shutdown = msm_marimba_shutdown_power,
-        //	.marimba_gpio_config = msm_marimba_gpio_config_svlte,
-        //	.fm = &marimba_fm_pdata,
-        .tsadc = &marimba_tsadc_pdata,
+	.fm = &marimba_fm_pdata,
 	.codec = &mariba_codec_pdata,
-        .tsadc_ssbi_adap = MARIMBA_SSBI_ADAP,
+	.tsadc_ssbi_adap = MARIMBA_SSBI_ADAP,
 };
 
 static void __init glacier_init_marimba(void)
 {
-	vreg_marimba_1 = vreg_get(NULL, "s2");
-	if (IS_ERR(vreg_marimba_1)) {
-		printk(KERN_ERR "%s: vreg get failed (%ld)\n",
-			__func__, PTR_ERR(vreg_marimba_1));
-		return;
-	}
 	vreg_marimba_2 = vreg_get(NULL, "gp16");
 	if (IS_ERR(vreg_marimba_2)) {
 		printk(KERN_ERR "%s: vreg get failed (%ld)\n",
@@ -1381,21 +1315,21 @@ static struct platform_device msm_aux_pcm_device = {
 	.resource       = msm_aux_pcm_resources,
 };
 
-static struct platform_device msm_aictl_device = {
+struct platform_device msm_aictl_device = {
 	.name = "audio_interct",
 	.id   = 0,
 	.num_resources = ARRAY_SIZE(msm_aictl_resources),
 	.resource = msm_aictl_resources,
 };
 
-static struct platform_device msm_mi2s_device = {
+struct platform_device msm_mi2s_device = {
 	.name = "mi2s",
 	.id   = 0,
 	.num_resources = ARRAY_SIZE(msm_mi2s_resources),
 	.resource = msm_mi2s_resources,
 };
 
-static struct platform_device msm_lpa_device = {
+struct platform_device msm_lpa_device = {
 	.name = "lpa",
 	.id   = 0,
 	.num_resources = ARRAY_SIZE(msm_lpa_resources),
@@ -1404,6 +1338,7 @@ static struct platform_device msm_lpa_device = {
 		.platform_data = &lpa_pdata,
 	},
 };
+
 #endif
 
 #define DEC0_FORMAT ((1<<MSM_ADSP_CODEC_MP3)| \
@@ -1434,10 +1369,7 @@ static struct platform_device msm_lpa_device = {
 
 static unsigned int dec_concurrency_table[] = {
 	/* Audio LP */
-	0,
-	(DEC3_FORMAT|(1<<MSM_ADSP_MODE_NONTUNNEL)|(1<<MSM_ADSP_OP_DM)),
-	(DEC2_FORMAT|(1<<MSM_ADSP_MODE_NONTUNNEL)|(1<<MSM_ADSP_OP_DM)),
-	(DEC1_FORMAT|(1<<MSM_ADSP_MODE_NONTUNNEL)|(1<<MSM_ADSP_OP_DM)),
+	0, 0, 0, 0,
 	(DEC0_FORMAT|(1<<MSM_ADSP_MODE_TUNNEL)|(1<<MSM_ADSP_MODE_LP)|
 	(1<<MSM_ADSP_OP_DM)),
 
@@ -1566,6 +1498,7 @@ static void __init aux_pcm_gpio_init(void)
 	config_gpio_table(aux_pcm_gpio_off,
 		ARRAY_SIZE(aux_pcm_gpio_off));
 }
+
 #ifdef CONFIG_VP_A1026
 static uint32_t audience_gpio_on_table[] = {
 	PCOM_GPIO_CFG(GLACIER_AUD_A1026_INT, 0, GPIO_OUTPUT, GPIO_NO_PULL, GPIO_8MA),
@@ -1644,16 +1577,6 @@ static struct msm_pm_platform_data msm_pm_data[MSM_PM_SLEEP_MODE_NR] = {
 		.latency = 8594,
 		.residency = 23740,
 	},
-/*
-	[MSM_PM_SLEEP_MODE_POWER_COLLAPSE_NO_XO_SHUTDOWN] = {
-		.idle_supported = 1,
-		.suspend_supported = 1,
-		.idle_enabled = 1,
-		.suspend_enabled = 1,
-		.latency = 4594,
-		.residency = 23740,
-	},
-*/
 	[MSM_PM_SLEEP_MODE_POWER_COLLAPSE_STANDALONE] = {
 #ifdef CONFIG_MSM_STANDALONE_POWER_COLLAPSE
 		.idle_supported = 1,
@@ -1689,13 +1612,6 @@ static struct msm_pm_platform_data msm_pm_data[MSM_PM_SLEEP_MODE_NR] = {
 
 #ifdef CONFIG_SPI_QSD
 static struct spi_board_info msm_spi_board_info[] __initdata = {
-	{
-		.modalias	= "spi_qsd",
-		.mode		= SPI_MODE_3,
-		.bus_num	= 0,
-		.chip_select	= 2,
-		.max_speed_hz	= 10000000,
-	},
 	{
 		.modalias	= "spi_oj",
 		.mode		= SPI_MODE_3,
@@ -1802,68 +1718,6 @@ static struct msm_usb_host_platform_data msm_usb_host_pdata = {
 		.vbus_power = msm_hsusb_vbus_power,
 		.power_budget   = 180,
 };
-#endif
-
-#if 0 // CONFIG_USB_MSM_OTG_72K
-static struct vreg *vreg_3p3;
-static int msm_hsusb_ldo_init(int init)
-{
-	uint32_t version = 0;
-	int def_vol = 3400;
-
-	version = socinfo_get_version();
-
-	if (SOCINFO_VERSION_MAJOR(version) >= 2 &&
-			SOCINFO_VERSION_MINOR(version) >= 1) {
-		def_vol = 3075;
-		pr_debug("%s: default voltage:%d\n", __func__, def_vol);
-	}
-
-	if (init) {
-		vreg_3p3 = vreg_get(NULL, "usb");
-		if (IS_ERR(vreg_3p3))
-			return PTR_ERR(vreg_3p3);
-		vreg_set_level(vreg_3p3, def_vol);
-	} else
-		vreg_put(vreg_3p3);
-
-	return 0;
-}
-
-static int msm_hsusb_ldo_enable(int enable)
-{
-	static int ldo_status;
-
-	if (!vreg_3p3 || IS_ERR(vreg_3p3))
-		return -ENODEV;
-
-	if (ldo_status == enable)
-		return 0;
-
-	ldo_status = enable;
-
-	if (enable)
-		return vreg_enable(vreg_3p3);
-
-	return vreg_disable(vreg_3p3);
-}
-
-static int msm_hsusb_ldo_set_voltage(int mV)
-{
-	static int cur_voltage = 3400;
-
-	if (!vreg_3p3 || IS_ERR(vreg_3p3))
-		return -ENODEV;
-
-	if (cur_voltage == mV)
-		return 0;
-
-	cur_voltage = mV;
-
-	pr_debug("%s: (%d)\n", __func__, mV);
-
-	return vreg_set_level(vreg_3p3, mV);
-}
 #endif
 
 static int phy_init_seq[] = { 0x06, 0x36, 0x0C, 0x31, 0x31, 0x32, 0x1, 0x0D, 0x1, 0x10, -1 };
@@ -1990,51 +1844,7 @@ struct platform_device glacier_bcm_bt_lpm_device = {
 #endif
 #endif
 
-#ifdef CONFIG_MSM_GEMINI
-static struct resource msm_gemini_resources[] = {
-	{
-		.start  = 0xA3A00000,
-		.end    = 0xA3A00000 + 0x0150 - 1,
-		.flags  = IORESOURCE_MEM,
-	},
-	{
-		.start  = INT_JPEG,
-		.end    = INT_JPEG,
-		.flags  = IORESOURCE_IRQ,
-	},
-};
-
-static struct platform_device msm_gemini_device = {
-	.name           = "msm_gemini",
-	.resource       = msm_gemini_resources,
-	.num_resources  = ARRAY_SIZE(msm_gemini_resources),
-};
-#endif
-
-#ifdef CONFIG_MSM_VPE
-static struct resource msm_vpe_resources[] = {
-	{
-		.start	= 0xAD200000,
-		.end	= 0xAD200000 + SZ_1M - 1,
-		.flags	= IORESOURCE_MEM,
-	},
-	{
-		.start	= INT_VPE,
-		.end	= INT_VPE,
-		.flags	= IORESOURCE_IRQ,
-	},
-};
-
-static struct platform_device msm_vpe_device = {
-       .name = "msm_vpe",
-       .id   = 0,
-       .num_resources = ARRAY_SIZE(msm_vpe_resources),
-       .resource = msm_vpe_resources,
-};
-#endif
-
 #ifdef CONFIG_MSM_CAMERA
-
 static struct i2c_board_info msm_camera_boardinfo[] __initdata = {
 #ifdef CONFIG_S5K4E1GX
 	{
@@ -2148,14 +1958,13 @@ static int glacier_sensor_power_disable(char *power)
 static int glacier_sensor_vreg_on(void)
 {
 	int rc;
-
 	struct pm_gpio camera_analog_pw_on = {
-		.direction		= PM_GPIO_DIR_OUT,
+		.direction	= PM_GPIO_DIR_OUT,
 		.output_buffer	= PM_GPIO_OUT_BUF_CMOS,
 		.output_value	= 1,
-		.pull			= PM_GPIO_PULL_NO,
+		.pull		= PM_GPIO_PULL_NO,
 		.out_strength	= PM_GPIO_STRENGTH_HIGH,
-		.function = PM_GPIO_FUNC_NORMAL,
+		.function 	= PM_GPIO_FUNC_NORMAL,
 	};
 
 	pr_info("%s camera vreg on\n", __func__);
@@ -2169,9 +1978,8 @@ static int glacier_sensor_vreg_on(void)
 	/*camera IO power*/
 	rc = glacier_sensor_power_enable("gp2", 1800);
 
-
 	/*camera analog power*/
-	pm8xxx_gpio_config(GLACIER_CAM_A2V85_EN, &camera_analog_pw_on);
+	pm8xxx_gpio_config(PM8058_GPIO_PM_TO_SYS(GLACIER_CAM_A2V85_EN), &camera_analog_pw_on);
 
 	/*camera digital power*/
 	if (system_rev >= 1)
@@ -2187,17 +1995,20 @@ static int glacier_sensor_vreg_on(void)
 static int glacier_sensor_vreg_off(void)
 {
 	int rc;
-	/*camera analog power*/
 	struct pm_gpio camera_analog_pw_off = {
-		.direction		= PM_GPIO_DIR_OUT,
+		.direction	= PM_GPIO_DIR_OUT,
 		.output_buffer	= PM_GPIO_OUT_BUF_CMOS,
 		.output_value	= 0,
-		.pull			= PM_GPIO_PULL_NO,
+		.pull		= PM_GPIO_PULL_NO,
 		.out_strength	= PM_GPIO_STRENGTH_LOW,
-		.function = PM_GPIO_FUNC_NORMAL,
+		.function 	= PM_GPIO_FUNC_NORMAL,
 	};
 
-	pm8xxx_gpio_config(GLACIER_CAM_A2V85_EN, &camera_analog_pw_off);
+	pr_info("%s camera vreg off\n", __func__);
+
+	/*camera analog power*/
+	pm8xxx_gpio_config(PM8058_GPIO_PM_TO_SYS(GLACIER_CAM_A2V85_EN), &camera_analog_pw_off);
+
 	/*camera digital power*/
 	rc = glacier_sensor_power_disable("gp4");
 
@@ -2206,6 +2017,7 @@ static int glacier_sensor_vreg_off(void)
 
 	/*camera VCM power*/
 	rc = glacier_sensor_power_disable("wlan");
+
 	return rc;
 }
 
@@ -2239,6 +2051,35 @@ static int flashlight_control(int mode)
 {
 	return aat1271_flashlight_control(mode);
 }
+
+static uint32_t fl_gpio_table[] = {
+	PCOM_GPIO_CFG(GLACIER_GPIO_FLASHLIGHT_TORCH, 0,
+				GPIO_OUTPUT, GPIO_PULL_DOWN, GPIO_2MA),
+	PCOM_GPIO_CFG(GLACIER_GPIO_FLASHLIGHT_FLASH, 0,
+				GPIO_OUTPUT, GPIO_PULL_DOWN, GPIO_2MA),
+
+};
+
+static void config_glacier_flashlight_gpios(void)
+{
+	config_gpio_table(fl_gpio_table,
+		ARRAY_SIZE(fl_gpio_table));
+}
+
+static struct flashlight_platform_data glacier_flashlight_data = {
+	.gpio_init  = config_glacier_flashlight_gpios,
+	.torch = GLACIER_GPIO_FLASHLIGHT_TORCH,
+	.flash = GLACIER_GPIO_FLASHLIGHT_FLASH,
+	.flash_duration_ms = 600,
+	.led_count = 1,
+};
+
+static struct platform_device glacier_flashlight_device = {
+	.name = FLASHLIGHT_NAME,
+	.dev		= {
+		.platform_data	= &glacier_flashlight_data,
+	},
+};
 #endif
 
 struct msm_camera_device_platform_data msm_camera_device_data = {
@@ -2289,12 +2130,12 @@ static void glacier_mt9v113_clk_switch(void){
 }
 #endif
 
+#ifdef CONFIG_S5K4E1GX
 static struct msm_camera_sensor_info msm_camera_sensor_s5k4e1gx_data = {
 	.sensor_name    = "s5k4e1gx",
 	.sensor_reset   = GLACIER_CAM_RST,
-	.vcm_pwd        = GLACIER_CAM_PWD,
+	.vcm_pwd     = GLACIER_CAM_PWD,
 	.camera_clk_switch	= glacier_s5k4e1gx_clk_switch,
-/*	.camera_analog_pwd = "gp8",*/
 	.camera_io_pwd = "gp2",
 	.camera_vcm_pwd = "wlan",
 	.camera_digital_pwd = "gp4",
@@ -2303,12 +2144,9 @@ static struct msm_camera_sensor_info msm_camera_sensor_s5k4e1gx_data = {
 	.camera_power_off = glacier_sensor_vreg_off,
 	.pdata          = &msm_camera_device_data,
 	.flash_type     = MSM_CAMERA_FLASH_LED,
-#ifdef CONFIG_ARCH_MSM_FLASHLIGHT
-	.flash_cfg      = &msm_camera_sensor_flash_cfg,
-#endif
-	.sensor_platform_info = NULL,
 	.resource       = msm_camera_resources,
 	.num_resources  = ARRAY_SIZE(msm_camera_resources),
+	.flash_cfg	= &msm_camera_sensor_flash_cfg,
 	.sensor_lc_disable = true, /* disable sensor lens correction */
 	.cam_select_pin = GLACIER_CLK_SWITCH,
 };
@@ -2319,7 +2157,9 @@ static struct platform_device msm_camera_sensor_s5k4e1gx = {
 		.platform_data = &msm_camera_sensor_s5k4e1gx_data,
 	},
 };
+#endif
 
+#ifdef CONFIG_MT9V113
 static struct msm_camera_sensor_info msm_camera_sensor_mt9v113_data = {
 	.sensor_name	= "mt9v113",
 	.sensor_reset	= GLACIER_CAM2_RST,
@@ -2340,6 +2180,50 @@ static struct platform_device msm_camera_sensor_mt9v113 = {
 		.platform_data = &msm_camera_sensor_mt9v113_data,
 	},
 };
+#endif
+
+#ifdef CONFIG_MSM_GEMINI
+static struct resource msm_gemini_resources[] = {
+	{
+		.start  = 0xA3A00000,
+		.end    = 0xA3A00000 + 0x0150 - 1,
+		.flags  = IORESOURCE_MEM,
+	},
+	{
+		.start  = INT_JPEG,
+		.end    = INT_JPEG,
+		.flags  = IORESOURCE_IRQ,
+	},
+};
+
+static struct platform_device msm_gemini_device = {
+	.name           = "msm_gemini",
+	.resource       = msm_gemini_resources,
+	.num_resources  = ARRAY_SIZE(msm_gemini_resources),
+};
+#endif
+
+#ifdef CONFIG_MSM_VPE
+static struct resource msm_vpe_resources[] = {
+	{
+		.start	= 0xAD200000,
+		.end	= 0xAD200000 + SZ_1M - 1,
+		.flags	= IORESOURCE_MEM,
+	},
+	{
+		.start	= INT_VPE,
+		.end	= INT_VPE,
+		.flags	= IORESOURCE_IRQ,
+	},
+};
+
+static struct platform_device msm_vpe_device = {
+       .name = "msm_vpe",
+       .id   = 0,
+       .num_resources = ARRAY_SIZE(msm_vpe_resources),
+       .resource = msm_vpe_resources,
+};
+#endif
 #endif /*CONFIG_MSM_CAMERA*/
 
 #ifdef CONFIG_BT
@@ -2348,19 +2232,7 @@ static struct platform_device glacier_rfkill = {
 	.id = -1,
 };
 #endif
-/*
-static struct htc_fmtx_platform_data htc_fmtx_data = {
-	.switch_pin	= GLACIER_WFM_ANT_SW,
-};
 
-static struct platform_device glacier_fmtx_rfkill = {
-	.name = "htc_fmtx_rfkill",
-	.id = -1,
-	.dev = {
-		.platform_data = &htc_fmtx_data,
-	},
-};
-*/
 #ifdef CONFIG_MSM_SDIO_AL
 static struct msm_gpio mdm2ap_status = {
 	GPIO_CFG(77, 0, GPIO_CFG_INPUT, GPIO_CFG_NO_PULL, GPIO_CFG_2MA),
@@ -2415,40 +2287,6 @@ static struct platform_device ram_console_device = {
 	.num_resources  = ARRAY_SIZE(ram_console_resources),
 	.resource       = ram_console_resources,
 };
-
-#ifdef CONFIG_ARCH_MSM_FLASHLIGHT
-static void config_glacier_flashlight_gpios(void)
-{
-	static uint32_t flashlight_gpio_table[] = {
-		PCOM_GPIO_CFG(GLACIER_GPIO_FLASHLIGHT_TORCH, 0,
-					GPIO_OUTPUT, GPIO_PULL_DOWN, GPIO_2MA),
-		PCOM_GPIO_CFG(GLACIER_GPIO_FLASHLIGHT_FLASH, 0,
-					GPIO_OUTPUT, GPIO_PULL_DOWN, GPIO_2MA),
-
-	};
-
-	config_gpio_table(flashlight_gpio_table,
-		ARRAY_SIZE(flashlight_gpio_table));
-}
-
-static struct flashlight_platform_data glacier_flashlight_data = {
-	.gpio_init  = config_glacier_flashlight_gpios,
-	.torch = GLACIER_GPIO_FLASHLIGHT_TORCH,
-	.flash = GLACIER_GPIO_FLASHLIGHT_FLASH,
-	.flash_duration_ms = 600,
-	.led_count = 1,
-	.chip_model = 0,
-};
-
-static struct platform_device glacier_flashlight_device = {
-	.name = FLASHLIGHT_NAME,
-	.dev		= {
-		.platform_data	= &glacier_flashlight_data,
-	},
-};
-#endif
-
-#define PM8058ADC_16BIT(adc) ((adc * 2200) / 65535) /* vref=2.2v, 16-bits resolution */
 
 static uint32_t usb_ID_PIN_input_table[] = {
 	GPIO_CFG(GLACIER_GPIO_USB_ID1_PIN, 0, GPIO_INPUT, GPIO_CFG_NO_PULL, GPIO_CFG_4MA),
@@ -2608,10 +2446,11 @@ static void __init qup_device_i2c_init(void)
 }
 
 #ifdef CONFIG_I2C_SSBI
+/*
 static struct msm_i2c_ssbi_platform_data msm_i2c_ssbi6_pdata = {
 	.rsl_id = "D:PMIC_SSBI",
 };
-
+*/
 static struct msm_i2c_ssbi_platform_data msm_i2c_ssbi7_pdata = {
 	.rsl_id = "D:CODEC_SSBI",
 };
@@ -2895,7 +2734,7 @@ static struct mmc_platform_data msm7x30_sdc4_data = {
 
 #ifdef CONFIG_MMC_MSM_CARD_HW_DETECTION
 	.status      = msm7x30_sdcc_slot_status,
-	.status_irq  = PM8058_GPIO_IRQ(PMIC8058_IRQ_BASE, GLACIER_GPIO_SDMC_CD_N),
+	.status_irq  = PM8058_GPIO_IRQ(PMIC8058_IRQ_BASE, GLACIER_SDMC_CD_N),
 	.irq_flags   = IRQF_TRIGGER_RISING | IRQF_TRIGGER_FALLING,
 #endif
 
@@ -2904,7 +2743,6 @@ static struct mmc_platform_data msm7x30_sdc4_data = {
 #endif
 	.msmsdcc_fmin	= 144000,
 	.msmsdcc_fmid	= 25000000,
-	//	.msmsdcc_fmax	= 49152000,
 	.msmsdcc_fmax	= 50000000,
 	.nonremovable	= 0,
 	.slot_type     = &glacier_sdc4_slot_type,
@@ -3104,7 +2942,7 @@ static struct platform_device *devices[] __initdata = {
         &msm_device_ssbi_pmic1,
 #endif
 #ifdef CONFIG_I2C_SSBI
-        &msm_device_ssbi6,
+        /* &msm_device_ssbi6, */
         &msm_device_ssbi7,
 #endif
         &android_pmem_device,
@@ -3124,12 +2962,6 @@ static struct platform_device *devices[] __initdata = {
         &msm_mi2s_device,
         &msm_lpa_device,
         &msm_aux_pcm_device,
-#endif
-#ifdef CONFIG_S5K4E1GX
-        &msm_camera_sensor_s5k4e1gx,
-#endif
-#ifdef CONFIG_MT9V113
-	&msm_camera_sensor_mt9v113, /* 2nd CAM */
 #endif
         &msm_device_adspdec,
         &qup_device_i2c,
@@ -3163,6 +2995,13 @@ static struct platform_device *devices[] __initdata = {
         &qcedev_device,
 #endif
 
+#ifdef CONFIG_S5K4E1GX
+        &msm_camera_sensor_s5k4e1gx,
+#endif
+#ifdef CONFIG_MT9V113
+	&msm_camera_sensor_mt9v113, /* 2nd CAM */
+#endif
+
         &htc_battery_pdev,
         &msm_ebi0_thermal,
         &msm_ebi1_thermal,
@@ -3172,12 +3011,11 @@ static struct platform_device *devices[] __initdata = {
 #ifdef CONFIG_BT
         &glacier_rfkill,
 #endif
-		//&glacier_fmtx_rfkill,
 #ifdef CONFIG_ARCH_MSM_FLASHLIGHT
         &glacier_flashlight_device,
 #endif
 #ifdef CONFIG_CABLE_DETECT_GPIO_DOCK
-		&cable_detect_device,
+	&cable_detect_device,
 #endif
 };
 
@@ -3248,14 +3086,6 @@ static void __init glacier_init(void)
 	msm_qsd_spi_init();
 
 	spi_register_board_info(msm_spi_board_info, ARRAY_SIZE(msm_spi_board_info));
-
-	if ((system_rev >= 0x80) || (engineerid & 0x2))
-		glacier_oj_data.ap_code = true;
-	platform_device_register(&glacier_oj);
-	if (!panel_type) {
-		glacier_ts_atmel_data[0].config_T9[9] = 5;
-		glacier_ts_atmel_data[0].abs_y_max = 954;
-	}
 	msm_pm_set_platform_data(msm_pm_data, ARRAY_SIZE(msm_pm_data));
 	BUG_ON(msm_pm_boot_init(MSM_PM_BOOT_CONFIG_RESET_VECTOR, ioremap(0x0, PAGE_SIZE)));
 
@@ -3270,18 +3100,17 @@ static void __init glacier_init(void)
 	aux_pcm_gpio_init();
 	msm_snddev_init();
 	audience_gpio_init();
+	glacier_audio_init();
 #endif
+	msm_init_pmic_vibrator(3000);
 
 	i2c_register_board_info(2, msm_marimba_board_info,
 			ARRAY_SIZE(msm_marimba_board_info));
 
-	i2c_register_board_info(0, i2c_compass_devices,
-			ARRAY_SIZE(i2c_compass_devices));
-
 	i2c_register_board_info(4 /* QUP ID */, msm_camera_boardinfo,
 				ARRAY_SIZE(msm_camera_boardinfo));
 #ifdef CONFIG_I2C_SSBI
-	msm_device_ssbi6.dev.platform_data = &msm_i2c_ssbi6_pdata;
+	/* msm_device_ssbi6.dev.platform_data = &msm_i2c_ssbi6_pdata; */
 	msm_device_ssbi7.dev.platform_data = &msm_i2c_ssbi7_pdata;
 #endif
 	pm8058_gpios_init();
@@ -3305,6 +3134,23 @@ static void __init glacier_init(void)
 #ifdef CONFIG_MSM_CAMERA
 	config_gpio_table(camera_on_gpio_table, ARRAY_SIZE(camera_on_gpio_table));
 #endif
+
+	if ((system_rev >= 0x80) || (engineerid & 0x2)){
+		glacier_oj_data.ap_code = true;
+		platform_device_register(&glacier_oj);
+	}
+	if (!panel_type) {
+		glacier_ts_atmel_data[0].config_T9[9] = 5;
+		glacier_ts_atmel_data[0].abs_y_max = 954;
+	}
+
+	i2c_register_board_info(0, i2c_devices,	
+			ARRAY_SIZE(i2c_devices));
+
+	i2c_register_board_info(0, i2c_compass_devices,
+			ARRAY_SIZE(i2c_compass_devices));
+
+	/*Virtual_key*/
 	properties_kobj = kobject_create_and_add("board_properties", NULL);
 	if (properties_kobj)
 		rc = sysfs_create_group(properties_kobj,
@@ -3312,15 +3158,12 @@ static void __init glacier_init(void)
 	if (!properties_kobj || rc)
 		pr_err("failed to create board_properties\n");
 
-	i2c_register_board_info(0, i2c_devices,	ARRAY_SIZE(i2c_devices));
         glacier_init_keypad();
 #ifdef CONFIG_MDP4_HW_VSYNC
 	glacier_te_gpio_config();
 #endif
 	glacier_init_panel();
-	glacier_audio_init();
 	glacier_wifi_init();
-	msm_init_pmic_vibrator(3000);
 }
 
 static unsigned pmem_sf_size = MSM_PMEM_SF_SIZE;
@@ -3347,14 +3190,6 @@ static int __init pmem_adsp_size_setup(char *p)
 }
 early_param("pmem_adsp_size", pmem_adsp_size_setup);
 
-static unsigned pmem_audio_size = MSM_PMEM_AUDIO_SIZE;
-static int __init pmem_audio_size_setup(char *p)
-{
-	pmem_audio_size = memparse(p, NULL);
-	return 0;
-}
-early_param("pmem_audio_size", pmem_audio_size_setup);
-
 static struct memtype_reserve msm7x30_reserve_table[] __initdata = {
 	[MEMTYPE_SMI] = {
 	},
@@ -3371,10 +3206,10 @@ static void __init size_pmem_device(struct android_pmem_platform_data *pdata, un
 	pdata->start = start;
 	pdata->size = size;
 	if (pdata->start)
-		pr_info("%s: pmem %s requests %lu bytes at 0x%p (0x%lx physical).\n",
+		pr_info("%s: pmem %s requests %lu bytes at 0x%p (0x%lx physical).\r\n",
 			__func__, pdata->name, size, __va(start), start);
 	else
-		pr_info("%s: pmem %s requests %lu bytes dynamically.\n",
+		pr_info("%s: pmem %s requests %lu bytes dynamically.\r\n",
 			__func__, pdata->name, size);
 }
 
@@ -3382,7 +3217,6 @@ static void __init size_pmem_devices(void)
 {
 #ifdef CONFIG_ANDROID_PMEM
 	size_pmem_device(&android_pmem_adsp_pdata, 0, pmem_adsp_size);
-	size_pmem_device(&android_pmem_audio_pdata, 0, pmem_audio_size);
 	size_pmem_device(&android_pmem_pdata, 0, pmem_sf_size);
 	msm7x30_reserve_table[MEMTYPE_EBI1].size += PMEM_KERNEL_EBI1_SIZE;
 #endif
@@ -3391,7 +3225,7 @@ static void __init size_pmem_devices(void)
 static void __init reserve_memory_for(struct android_pmem_platform_data *p)
 {
 	if (p->start == 0) {
-		pr_info("%s: reserve %lu bytes from memory %d for %s.\n", __func__, p->size, p->memory_type, p->name);
+		pr_info("%s: reserve %lu bytes from memory %d for %s.\r\n", __func__, p->size, p->memory_type, p->name);
 		msm7x30_reserve_table[p->memory_type].size += p->size;
 	}
 }
@@ -3400,7 +3234,6 @@ static void __init reserve_pmem_memory(void)
 {
 #ifdef CONFIG_ANDROID_PMEM
 	reserve_memory_for(&android_pmem_adsp_pdata);
-	reserve_memory_for(&android_pmem_audio_pdata);
 	reserve_memory_for(&android_pmem_pdata);
 #endif
 }
@@ -3463,16 +3296,13 @@ static void __init glacier_init_early(void)
 static void __init glacier_fixup(struct machine_desc *desc, struct tag *tags,
 								char **cmdline, struct meminfo *mi)
 {
-	int mem = parse_tag_memsize((const struct tag *)tags);
 	engineerid = parse_tag_engineerid(tags);
 
 	mi->nr_banks = 2;
 	mi->bank[0].start = MSM_LINUX_BASE1;
-	mi->bank[0].size = MSM_LINUX_SIZE1;
+	mi->bank[0].size = MSM_LINUX_SIZE1 + MSM_MEM_256MB_OFFSET;
 	mi->bank[1].start = MSM_LINUX_BASE2;
 	mi->bank[1].size = MSM_LINUX_SIZE2;
-	if (mem == 768)
-		mi->bank[0].size += MSM_MEM_256MB_OFFSET;
 }
 
 MACHINE_START(GLACIER, "glacier")
